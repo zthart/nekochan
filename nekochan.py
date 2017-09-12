@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import requests
 import random
 import json
 import time
+import sys
 
 from slackclient import SlackClient
 
@@ -13,7 +14,6 @@ VERSION = 'v0.1'
 BOT_ID = '<YOUR BOTS ID>'
 TOKEN = '<YOUR BOT USER API TOKEN>'
 USER_TOKEN = '<AN API KEY ATTACHED TO YOUR USER FOR THE WORKSPACE YOU PLAN TO USE THIS BOT IN>'
-
 
 AT_BOT = "<@{0}>".format(BOT_ID)
 
@@ -27,6 +27,148 @@ CAT_KAOMOJI = ['(=^-ω-^=)', '(=^ ◡ ^=)', '(´• ω •`)ﾉ', '(*≧ω≦*)'
 # YOU SHOULD PROBABLY ADD THE CHANNEL ID OF THE DMS WITH THE BOT USER TO THE WHITELIST FIRST
 WHITELIST_FILE = 'whitelist.txt'
 ADMINS_FILE = 'admins.txt'
+
+class Nekochan():
+    def __init__(self, bot_token, user_token):
+        self.bot_token = bot_token
+        self.user_token = user_token
+
+        self.slack_client = SlackClient(self.bot_token)
+
+        self.bot_id = self._retrieve_bot_it(self.slack_client)
+
+        if self.bot_id is None:
+            print('There was a problem getting my Bot ID! ( : ౦ ‸ ౦ : )')
+            sys.exit(1)
+
+        self.at_bot = '<@{0}>'.format(self.bot_id)
+
+        self.whitelist_file = 'whitelist.txt'
+        self.admins_file = 'admins.txt'
+
+        self.kaomoji_list = [
+            '(=^-ω-^=)',
+            '(=^ ◡ ^=)',
+            '(´• ω •`)ﾉ',
+            '(*≧ω≦*)',
+            '(=⌒‿‿⌒=)',
+            '/ᐠ｡ꞈ｡ᐟ❁ \∫'
+        ]
+
+    @staticmethod
+    def _retrieve_bot_id(slack_client):
+        """Helper function to get bot ID
+
+        This function uses a `SlackClient` object to retrieve a list of all users in the current workspace, and then 
+        looks for a string match of its own name in order to store the ID assigned to it
+
+        Args:
+            slack_client (:obj:`SlackClient`): The SlackClient object through which to request all user info
+
+        Returns:
+            The (str) ID of the bot user if found, `None` otherwise
+        """
+        slack_response = slack_client.api_call('users.list')
+        if slack_response['ok']:
+            users = slack_response['members']
+            for user in users:
+                if 'name' in user and user['name'] == 'neko-chan':
+                    return user['id']
+
+        return None
+
+    def get_kaomoji(self):
+        """Return a random kaomoji from the list of available kaomoji
+
+        Returns:
+            A random kaomoji (str) from the list of available kaomoji
+        """
+        return self.kaomoji_list[random.randint(0,len(self.kaomoji_list)-1)]
+
+    def retrieve_whitelist(self):
+        """Get a list of the channel IDs of the channels in the whitelist
+
+        Channels in the whitelist can be posted to - this list is not necessarily the same as a list of all channels 
+        in which the bot is present. The bot may be in many channels outside of these, but only mentions in channels 
+        in this list will be processed for a response
+
+        Returns:
+            A :obj:`list` of the slack channel IDs of the channels in which the bot is allowed to respond to mentions.
+        """
+        with open(self.whitelist_file, 'r') as w:
+            whitelist = w.readlines()
+
+        return [x.strip() for x in whitelist]
+
+    def retrieve_admins(self):
+        """Get a list of the admins in the admins.txt file
+
+        Returns:
+            A :obj:`list` of the slack User IDs of the users with admin priveleges - not necessarily the same as a 
+            list of admin level users in the workspace.
+        """
+        with open(self.admins_file, 'r') as a:
+            admins = a.readlines()
+
+        return [x.strip() for x in admins]
+
+    def whitelist_channel(self, channel_id):
+        """Add a channel's ID to the whitelist
+
+        Args:
+            channel_id (str): The ID of the channel to add to the whitelist
+        """
+        with open(self.whitelist_file, 'a') as w:
+            w.write(channel_id.upper() + '\n')
+
+    def add_admin(self, user_id):
+        """Add a user's ID to the admin list
+
+        Args:
+            user_id (str): The ID of the user to add to the admin list
+        """
+        with open(self.admins_file, 'a') as a:
+            a.write(user_id.upper() + '\n')
+
+    def unwhitelist_channel(self, channel_id):
+        """Remove a channel ID from the whitelist
+
+        Args:
+            channel_id (str): The channel ID to remove from the whitelist
+
+        Returns:
+            The channel ID (str) of the channel that was removed, `None` if no channel was removed
+        """
+        removed = None
+        with open(self.whitelist_file, 'r') as w:
+            channels = w.readlines()
+        with open(self.whitelist_file, 'w') as w:
+            for channel in channels:
+                if channel != channel_id.upper()+'\n':
+                    w.write(channel)
+                else:
+                    removed = channel
+        return removed
+
+    def remove_admin(self, user_id):
+        """Removed a user ID fromt the admin list
+
+        Args:
+            user_id (str): The user ID to remove from the whitelist
+
+        Returns:
+            The user ID (str) of the user that was removed, `None` if no user was removed
+        """
+        removed = None
+        with open(self.admins_file, 'r') as a:
+            admins = a.readlines()
+        with open(self.admins_file, 'w') as a:
+            for admin in admins:
+                if admin != user_id.upper()+'\n':
+                    a.write(admin)
+                else:
+                    removed = admin
+        return removed
 
 def get_lists():
     with open(WHITELIST_FILE, 'r') as wl_file:
