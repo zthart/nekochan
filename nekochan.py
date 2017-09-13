@@ -1,41 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import requests
-import random
 import json
-import time
+import random
 import sys
+import time
 
+import requests
 from slackclient import SlackClient
 
 VERSION = 'v0.1'
 
-BOT_ID = '<YOUR BOTS ID>'
-TOKEN = '<YOUR BOT USER API TOKEN>'
-USER_TOKEN = '<AN API KEY ATTACHED TO YOUR USER FOR THE WORKSPACE YOU PLAN TO USE THIS BOT IN>'
-
-AT_BOT = "<@{0}>".format(BOT_ID)
-
-slack_client = SlackClient(TOKEN)
-
-CAT_KAOMOJI = ['(=^-ω-^=)', '(=^ ◡ ^=)', '(´• ω •`)ﾉ', '(*≧ω≦*)', '(=⌒‿‿⌒=)', '/ᐠ｡ꞈ｡ᐟ❁ \∫']
-
-# CREATE THESE FILES IN THIS DIRECTORY
-# SHOULD BE NEWLINE-SEPARATED USER IDS IN THE ADMIN FILE
-# AND NEWLINE-SEPARATED CHANNEL IDS IN THE WHITELIST FILE
-# YOU SHOULD PROBABLY ADD THE CHANNEL ID OF THE DMS WITH THE BOT USER TO THE WHITELIST FIRST
-WHITELIST_FILE = 'whitelist.txt'
-ADMINS_FILE = 'admins.txt'
 
 class Nekochan():
     def __init__(self, bot_token, user_token):
+        """A Silly chatbot without a point
+
+        """
         self.bot_token = bot_token
         self.user_token = user_token
 
         self.slack_client = SlackClient(self.bot_token)
 
-        self.bot_id = self._retrieve_bot_it(self.slack_client)
+        self.bot_id = self._retrieve_bot_id(self.slack_client)
 
         if self.bot_id is None:
             print('There was a problem getting my Bot ID! ( : ౦ ‸ ౦ : )')
@@ -54,6 +41,23 @@ class Nekochan():
             '(=⌒‿‿⌒=)',
             '/ᐠ｡ꞈ｡ᐟ❁ \∫'
         ]
+
+        self.whitelist = self._retrieve_whitelist()
+        self.admins = self._retrieve_admins()
+
+        self.blocking_for_admin = False
+        self.blocking_issue = None
+        self.blocking_data = None
+
+    def _reset_block(self):
+        self.blocking_for_admin = False
+        self.blocking_issue = None
+        self.blocking_data = None
+
+    def _set_block(self, issue, data):
+        self.blocking_for_admin = True
+        self.blocking_issue = issue
+        self.blocking_data = data
 
     @staticmethod
     def _retrieve_bot_id(slack_client):
@@ -77,7 +81,7 @@ class Nekochan():
 
         return None
 
-    def get_kaomoji(self):
+    def _get_kaomoji(self):
         """Return a random kaomoji from the list of available kaomoji
 
         Returns:
@@ -85,7 +89,7 @@ class Nekochan():
         """
         return self.kaomoji_list[random.randint(0,len(self.kaomoji_list)-1)]
 
-    def retrieve_whitelist(self):
+    def _retrieve_whitelist(self):
         """Get a list of the channel IDs of the channels in the whitelist
 
         Channels in the whitelist can be posted to - this list is not necessarily the same as a list of all channels 
@@ -100,7 +104,12 @@ class Nekochan():
 
         return [x.strip() for x in whitelist]
 
-    def retrieve_admins(self):
+    def update_whitelist(self):
+        """Update the whitelist content by re-reading the whitelist file
+        """
+        self.whitelist = self._retrieve_whitelist()
+
+    def _retrieve_admins(self):
         """Get a list of the admins in the admins.txt file
 
         Returns:
@@ -112,7 +121,12 @@ class Nekochan():
 
         return [x.strip() for x in admins]
 
-    def whitelist_channel(self, channel_id):
+    def update_admins(self):
+        """Update the admin list content by re-reading the admins file
+        """
+        self.admins = self._retrieve_admins()
+
+    def _whitelist_channel(self, channel_id):
         """Add a channel's ID to the whitelist
 
         Args:
@@ -121,7 +135,9 @@ class Nekochan():
         with open(self.whitelist_file, 'a') as w:
             w.write(channel_id.upper() + '\n')
 
-    def add_admin(self, user_id):
+        self.update_whitelist()
+
+    def _add_admin(self, user_id):
         """Add a user's ID to the admin list
 
         Args:
@@ -130,7 +146,9 @@ class Nekochan():
         with open(self.admins_file, 'a') as a:
             a.write(user_id.upper() + '\n')
 
-    def unwhitelist_channel(self, channel_id):
+        self.update_admins()
+
+    def _unwhitelist_channel(self, channel_id):
         """Remove a channel ID from the whitelist
 
         Args:
@@ -148,9 +166,10 @@ class Nekochan():
                     w.write(channel)
                 else:
                     removed = channel
+        self.update_whitelist()
         return removed
 
-    def remove_admin(self, user_id):
+    def _remove_admin(self, user_id):
         """Removed a user ID fromt the admin list
 
         Args:
@@ -168,205 +187,227 @@ class Nekochan():
                     a.write(admin)
                 else:
                     removed = admin
+        self.update_admins()
         return removed
 
-def get_lists():
-    with open(WHITELIST_FILE, 'r') as wl_file:
-        whitelist = wl_file.readlines()
+    def _response_switch(self, text, admin=False):
+        """if/else ladder that filters on keywords in the mentioning user's message
 
-    whitelist = [x.strip() for x in whitelist]
+        Args:
+            text (str): The message as returned by the slack API
+            admin (bool): True if the user whose message we're processing is on the bot's admin list
 
-    with open(ADMINS_FILE, 'r') as a_file:
-        admins = a_file.readlines()
-
-    admins = [x.strip() for x in admins]
-
-    return admins, whitelist
-
-def whitelist_channel(channel):
-    with open(WHITELIST_FILE, 'a') as wl_file:
-        wl_file.write(channel+'\n')
-
-def remove_from_whitelist(channel_to_remove):
-    with open(WHITELIST_FILE, 'r') as wl_file:
-        channels = wl_file.readlines()
-    with open(WHITELIST_FILE, 'w') as wl_file:
-        for channel in channels:
-            if channel != channel_to_remove+'\n':
-                wl_file.write(channel)
-
-def parse_firehose(rtm_output):
-    output_list = rtm_output
-    if output_list and len(output_list) > 0:
-        for output in output_list:
-
-            if output and 'text' in output and AT_BOT in output['text']:
-                print(json.dumps(output, indent=2))
-                # return the response object
-                return output
-
-    return None
-
-BLOCKING_FOR_CONFIRMATION = False
-ON = None
-BLOCK_FOR = None
-
-def _determine_response(text, admin=False):
-    global BLOCKING_FOR_CONFIRMATION
-    global ON
-    global BLOCK_FOR
-
-    if admin:
-        if BLOCKING_FOR_CONFIRMATION:
-            if 'yes' in text:
-                return 'confirm'
-            else:
-                BLOCKING_FOR_CONFIRMATION = False
-                ON = None
-                BLOCK_FOR = None
-        if 'join' in text:
-            return 'join'
-        elif 'kick' in text or 'leave' in text:
-            return 'leave'
-
-    if 'sound' in text or 'noise' in text or 'say' in text or 'meow' in text or 'speak' in text:
-        return 'nyaa'
-    elif ' hi' in text or 'hello' in text:
-        return 'greet'
-    elif 'friend' in text or 'friends' in text or 'neko' in text or text.strip() == 'parse:':
-        return 'image'
-    elif 'lewd' in text or 'lewds' in text or 'fuck' in text:
-        return 'lewd'
-    elif 'hold hands' in text or 'handholding' in text:
-        return 'hand'
-    elif 'waifu' in text or 'best' in text:
-        if 'are' in text or 'you' and 're' in text:
-            if 'not' not in text:
-                return 'waifu-pos'
-        return 'waifu-neg'
-    else:
-        return None
-
-
-
-def handle_command(data, admins, channels):
-    global BLOCKING_FOR_CONFIRMATION
-    global ON
-    global BLOCK_FOR
-
-    calling_user_id = data['user']
-    user = slack_client.api_call('users.info', user=calling_user_id)
-    text = ('parse: '+ data['text'].split(AT_BOT)[0] + data['text'].split(AT_BOT)[1]).lower()
-    channel = data['channel']
-
-    is_admin = False
-
-    if calling_user_id in admins:
-        is_admin = True
-
-    if channel not in channels:
-        print('Neko-chan isn\'t allowed in this channel') 
-        return
-
-    print('checking response code for text:\n{0}'.format(text))
-    response_code = _determine_response(text, admin=is_admin)
-
-    print('got response code: \'{0}\''.format(response_code))
-
-    # print('User Data:\n' + json.dumps(user, indent=2))
-
-    if user['user']['profile']['first_name'] == '':
-        name = user['user']['real_name']
-    else:
-        try:
-            name = user['user']['profile']['first_name'].split(' ')[1]
-        except:
-            name = user['user']['real_name']
-
-    response = None
-
-    if is_admin:
-        if response_code == 'join':
-            target_channel_name = '#{0}'.format(text.split('|')[1].split('>')[0])
-            print('Channel name:\t' + target_channel_name)
-            target_channel_id = text.split('#')[1].split('|')[0].upper()
-            print('Channel id:\t' + target_channel_id)
-
-            params = {
-                'token': USER_TOKEN,
-                'channel': target_channel_id,
-                'user': BOT_ID
-            }
-
-            slack_response = requests.post('https://slack.com/api/channels.invite', data=params)
-
-            print(json.dumps(slack_response.json(), indent=2))
-
-            if slack_response.json()['ok']:
-                whitelist_channel(target_channel_id)
-                response = 'Okay {0}-chan! You got it!!! (=^ ◡ ^=)'.format(name)
-            elif slack_response.json()['error'] == 'already_in_channel':
-                if target_channel_id not in channels:
-                    response = 'I\'m not allowed to speak in {0}, {1}-chan... Should we change that?'.format(target_channel_name, name)
-                    BLOCKING_FOR_CONFIRMATION = True
-                    ON = 'whitelist'
-                    BLOCK_FOR = target_channel_id
+        Returns:
+            a (str) response code if a known keyword is found, `None` otherwise
+        """
+        if admin:
+            if self.blocking_for_admin:
+                if 'yes' in text:
+                    return 'confirm'
                 else:
-                    response = 'I\'m already in {0}, {1}-chan! No need to add me again („ಡωಡ„)'.format(target_channel_name, name)
-            else:
-                response = 'Sorry {0}-chan... I couldn\'t join that channel ｡ﾟ(｡ﾉωヽ｡)ﾟ｡'.format(name)
-        elif response_code == 'leave':
-            target_channel_name = '#{0}'.format(text.split('|')[1].split('>')[0])
-            target_channel_id = text.split('#')[1].split('|')[0].upper()
-            print('Channel Name:\t{0}\nChannel ID:\t{1}'.format(target_channel_name, target_channel_id))
-            remove_from_whitelist(target_channel_id)
-            response = 'Unfortunately I can\'t _leave_ channels {0}-chan, but I\'ll keep quiet in {1} for now!'.format(name, '<#{0}|{1}>'.format(target_channel_id, target_channel_name.split('#')[1]))
-        elif response_code == 'confirm':
-            if ON is 'whitelist':
-                slack_response = slack_client.api_call('channels.info', channel=BLOCK_FOR)
-                target_channel_name = slack_response['channel']['name']
-                whitelist_channel(BLOCK_FOR)
-                BLOCKING_FOR_CONFIRMATION = False
-                ON = None
-                BLOCK_FOR = None
-                response = 'Alright {0}-chan! I\'ll pipe up again in #{1} starting now!'.format(name, target_channel_name)
+                    self._reset_block()
+            if 'join' in text:
+                return 'join'
+            elif 'kick' in text or 'leave' in text:
+                return 'leave'
 
-    if response is None:
-        if response_code == 'greet':
-            response = "Hi!!!!!!! (=^-ω-^=) (´• ω •`)ﾉ\nHow's your day going {0}-chan?".format(name)
-        elif response_code == 'nyaa':
-            response = 'nyaaa~ {0}'.format(CAT_KAOMOJI[random.randint(0, 4)])
-        elif response_code == 'image':
-            api_response = requests.get('http://nekos.life/api/neko')
-            response = 'Here you go {0}-chan!!!\n{1}'.format(name, api_response.json()['neko'])
-        elif response_code == 'lewd' or response_code == 'hand':
-            response = 'Th-that\'s l-l-lewd {0}-chan (⁄ ⁄•⁄ω⁄•⁄ ⁄) '.format(name)
-        elif response_code == 'waifu-neg':
-            response = 'Hmf (＃￣ω￣)... I was told that that _I_ was best-girl'
-        elif response_code == 'waifu-pos':
-            response = 'Y-you really think so {0}-chan?! (´• ω •`) ♡♡♡'.format(name)
+        if 'sound' in text or 'noise' in text or 'say' in text or 'meow' in text or 'speak' in text:
+            return 'nyaa'
+        elif ' hi' in text or 'hello' in text:
+            return 'greet'
+        elif 'friend' in text or 'friends' in text or 'neko' in text or text.strip() == 'parse:':
+            return 'image'
+        elif 'lewd' in text or 'lewds' in text or 'fuck' in text:
+            return 'lewd'
+        elif 'hold hands' in text or 'handholding' in text:
+            return 'hand'
+        elif 'waifu' in text or 'best' in text:
+            if 'are' in text or 'you' and 're' in text:
+                if 'not' not in text:
+                    return 'waifu-pos'
+            return 'waifu-neg'
         else:
-            response = 'I\'m not sure what you mean {0}-chan ┐(\'ω`;)┌'.format(name)
+            return None
 
-    slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
+    def _parse_firehose(self, rtm_output):
+        """Read through the most recent firehose output for mentions
 
+        Args:
+            rtm_output (:obj:`list`): a list of output from the slack rtm api
+
+        Returns:
+            dict: Message objects from the output with bot mentions
+        """
+        if rtm_output and len(rtm_output) > 0:
+            for output in rtm_output:
+                if output and 'text' in output and self.at_bot in output['text']:
+                    print(json.dumps(output, indent=2))
+                    return output
+
+    @staticmethod
+    def _retrieve_name(user):
+        """Helper function to return first or real name, based on availability
+
+        Args:
+            user (:obj:`dict`): The json user object returned by the slack api
+
+        Returns:
+            str: Either the first name or real name of the given user
+        """
+        if user['user']['profile']['first_name'] == '':
+            return user['user']['real_name']
+        else:
+            try:
+                return user['user']['profile']['first_name'].split(' ')[1]
+            except:
+                return user['user']['real_name']
+
+    def _handle_join(self, text, name):
+        """Determine the response for a join request
+
+        Args:
+            text (str): The text of the message including the join command
+            name (str): The name of the user requesting the join
+
+        Returns:
+            str: The bot's response to the join request
+        """
+        target_channel_name = text.split('|')[1].split('>')[0]
+        target_channel_id = text.split('#')[1].split('|')[0].upper()
+
+        channel_mention = '<#{0}|{1}>'.format(target_channel_id, target_channel_name)
+
+        params = {
+            'token': self.user_token,
+            'channel': target_channel_id,
+            'user': self.bot_id
+        }
+
+        slack_response = requests.post('https://slack.com/api/channels.invite', data=params).json()
+
+        if slack_response['ok']:
+            self._whitelist_channel(target_channel_id)
+            return 'Okay {0}-chan! You got it!!! (=^ ◡ ^=)'.format(name)
+        elif slack_response['error'] == 'already_in_channel':
+            if target_channel_id not in self.whitelist:
+                self._set_block('whitelist', target_channel_id)
+                return 'I\'m not allowed to speak in {0}, {1}-chan... Should we change that?'.format(channel_mention,
+                                                                                                     name)
+            else:
+                return 'I\'m already in {0}, {1}-chan! No need to add me again („ಡωಡ„)'.format(channel_mention, name)
+        else:
+            return 'Sorry {0}-chan... I couldn\'t join that channel... ｡ﾟ(｡ﾉωヽ｡)ﾟ｡'.format(name)
+
+    def _handle_command(self, data):
+        """The main logic for the bot
+
+        Takes in the data from the firehose that contains a mention of the bot, retrieves user and other info from the
+        message and sends the output to the `_response_switch()` function to determine the proper response. Makes the
+        call to the slack api to actually respond to commands.
+
+        Args:
+            data (:obj:`dict`): The output from the firehose that contains a bot mention
+
+        """
+        calling_user_id = data['user']
+        user_object = self.slack_client.api_call('users.info', user=calling_user_id)
+        text = ('parse: ' + data['text'].split(self.at_bot)[0] + data['text'].split(self.at_bot)[1]).lower()
+        channel = data['channel']
+
+        is_admin = calling_user_id in self.admins
+
+        if channel not in self.whitelist:
+            print('Neko-chan isn\'t allowed in this channel')
+            return
+
+        print('checking response code for text:\n{0}'.format(text))
+        response_code = self._response_switch(text, admin=is_admin)
+
+        print('got response code:{0}'.format(response_code))
+
+        name = self._retrieve_name(user_object)
+
+        response = None
+
+        if is_admin:
+            if response_code == 'join':
+                response = self._handle_join(text, name)
+            elif response_code == 'leave':
+                target_channel_name = text.split('|')[1].split('>')[0]
+                target_channel_id = text.split('#')[1].split('|')[0].upper()
+
+                channel_mention = '<#{0}|{1}>'.format(target_channel_id, target_channel_name)
+
+                self._unwhitelist_channel(target_channel_id)
+
+                response = 'Unfortunately I can\'t _leave_ channels {0}-chan, but I\'ll keep quiet ' \
+                           'in {1} for now!'.format(name, channel_mention)
+            elif response_code == 'confirm':
+                if self.blocking_issue is 'whitelist':
+                    slack_response = self.slack_client.api_call('channels.info', channel=self.blocking_data)
+                    target_channel_name = slack_response['channel']['name']
+                    target_channel_id = slack_response['channel']['id']
+
+                    channel_mention = '<#{0}|{1}>'.format(target_channel_id, target_channel_name)
+
+                    self._whitelist_channel(self.blocking_data)
+                    self._reset_block()
+
+                    response = 'Alright {0}-chan! I\'ll pipe up again in {1} starting now!'.format(name,
+                                                                                                   channel_mention)
+
+        if response is None:
+            if response_code == 'greet':
+                response = "Hi!!!!!!! (=^-ω-^=) (´• ω •`)ﾉ\nHow's your day going {0}-chan?".format(name)
+            elif response_code == 'nyaa':
+                response = 'nyaaa~ {0}'.format(self._get_kaomoji())
+            elif response_code == 'image':
+                api_response = requests.get('http://nekos.life/api/neko')
+                response = 'Here you go {0}-chan!!!\n{1}'.format(name, api_response.json()['neko'])
+            elif response_code == 'lewd' or response_code == 'hand':
+                response = 'Th-that\'s l-l-lewd {0}-chan (⁄ ⁄•⁄ω⁄•⁄ ⁄) '.format(name)
+            elif response_code == 'waifu-neg':
+                response = 'Hmf (＃￣ω￣)... I was told that that _I_ was best-girl'
+            elif response_code == 'waifu-pos':
+                response = 'Y-you really think so {0}-chan?! (´• ω •`) ♡♡♡'.format(name)
+            else:
+                response = 'I\'m not sure what you mean {0}-chan ┐(\'ω`;)┌'.format(name)
+
+        self.slack_client.api_call('chat.postMessage', channel=channel, text=response)
+
+    def run(self):
+        """Main execution loop for the bot
+
+        The loop will attempt to reconnect to slack 3 times before exiting
+        """
+        retries = 3
+        while retries >= 0:
+            if self.slack_client.rtm_connect():
+                print('Neko-chan connected and running! (*≧ω≦*)')
+                while True:
+                    mention = self._parse_firehose(self.slack_client.rtm_read())
+
+                    if mention:
+                        self._handle_command(mention)
+
+                    time.sleep(0.5)
+            else:
+                if retries is not 0:
+                    print('Oh no!!! Couldn\'t connect to slack ｡･ﾟﾟ*(>д<)*ﾟﾟ･｡\nRetrying {0} more times...'.format(retries))
+                    retries -= 1
+                else:
+                    print('I wasn\'t able to reach slack ( ╥ω╥ ), you should try again later...')
+                    sys.exit(1)
 
 if __name__ == '__main__':
-    admin_list, channel_list = get_lists()
+    # Create the Nekochan object
+    nekochan = Nekochan('<bot_token>',
+                        '<user_token>')
 
-    print('Nekochan {0} running with Admins:\n{1}\nWhitelist:\n{2}'.format(VERSION, admin_list, channel_list))
+    # print some general info
+    print('Nekochan {0} starting up!\nAdmins: {1}\nWhitelist: {2}'.format(VERSION,
+                                                                          nekochan.admins,
+                                                                          nekochan.whitelist))
 
-    if slack_client.rtm_connect():
-        print('Neko-chan connected and running! (*≧ω≦*)')
-        while True:
-            mention = parse_firehose(slack_client.rtm_read())
-
-            if mention:
-                admin_list, channel_list = get_lists()
-                handle_command(mention, admin_list, channel_list)
-
-            time.sleep(1)
-    else:
-        print('Oh no!!! Couldn\'t connect to slack ｡･ﾟﾟ*(>д<)*ﾟﾟ･｡')
-
-
+    # Start!
+    nekochan.run()
