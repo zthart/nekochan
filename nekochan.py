@@ -9,13 +9,31 @@ import time
 import requests
 from slackclient import SlackClient
 
-VERSION = 'v0.1'
+VERSION = 'v0.2'
 
 
 class Nekochan():
     def __init__(self, bot_token, user_token):
         """A Silly chatbot without a point
 
+        Args:
+            bot_token (str): The Bot's API Token
+            user_token (str): A User's API token for inviting the bot to channels
+
+        Attributes:
+            self.bot_token (str): The Bot's API Token
+            self.user_token (str): A User's API token for inviting the bot to channels
+            self.slack_client (SlackClient): The SlackClient object used to communicate with the API
+            self.bot_id (str): The Bot's user ID
+            self.at_bot (str): the coded string that replaces the '@botname' text in message objects
+            self.whitelist_file (str): Path to the whitelist.txt file
+            self.admins_file (str): Path to the admins.txt file
+            self.kaomoji_list (:obj:`list`): A list of cute kaomoji!
+            self.whitelist (:obj:`list`): The list of channel ID's the bot is allowed to speak in
+            self.admins (:obj:`list`): The list of User IDs of the bot's admins
+            self.blocking_for_admin (bool): determines whether the bot is expecting specific input from an admin
+            self.blocking_issue (str): A string keyword for the specific blocking scenario
+            self.blocking_data (str): The ID of a slack object to act on to resolve the blocking scenario
         """
         self.bot_token = bot_token
         self.user_token = user_token
@@ -401,6 +419,7 @@ class Nekochan():
 
 if __name__ == '__main__':
     # Create the Nekochan object
+    # Replace these placeholders with your keys!
     nekochan = Nekochan('<bot_token>',
                         '<user_token>')
 
