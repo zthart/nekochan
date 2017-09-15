@@ -244,6 +244,8 @@ class Nekochan():
                 if 'not' not in text:
                     return 'waifu-pos'
             return 'waifu-neg'
+        elif 'tell' in text or 'whisper' in text:
+            return 'whisper'
         else:
             return None
 
@@ -262,8 +264,7 @@ class Nekochan():
                     print(json.dumps(output, indent=2))
                     return output
 
-    @staticmethod
-    def _retrieve_name(user):
+    def _retrieve_name(self, user, is_id=False):
         """Helper function to return first or real name, based on availability
 
         Args:
@@ -272,13 +273,48 @@ class Nekochan():
         Returns:
             str: Either the first name or real name of the given user
         """
-        if user['user']['profile']['first_name'] == '':
-            return user['user']['real_name']
+        if is_id:
+            user_object = self.slack_client.api_call('users.info', user=user)
+
+        else:
+            user_object = user
+
+        if user_object['user']['profile']['first_name'] == '':
+            return user_object['user']['real_name']
         else:
             try:
-                return user['user']['profile']['first_name'].split(' ')[1]
+                return user_object['user']['profile']['first_name'].split(' ')[1]
             except:
-                return user['user']['real_name']
+                return user_object['user']['real_name']
+
+    def _handle_whisper(self, message, sending_user, target_user):
+        target_user_name = self._retrieve_name(target_user, is_id=True)
+        channel_object = self.slack_client.api_call('im.open', user=target_user)
+        channel_id = channel_object['channel']['id']
+
+        message_json = {
+            'text': 'Hey there {0}-chan! {1}-chan asked me to send you this message:'.format(target_user_name,
+                                                                                             sending_user),
+            'attachments': [
+                {
+                    'fallback': 'Message from {0}-chan'.format(sending_user),
+                    'color': '#a0319e',
+                    'author_name': sending_user,
+                    'text': message,
+                    'footer': 'Delivered with ♡ by Neko-chan!'
+                }
+            ]
+        }
+
+        post_response = self.slack_client.api_call('chat.postEphemeral',
+                                                   channel=channel_id,
+                                                   text=message_json['text'],
+                                                   user=target_user,
+                                                   as_user=True,
+                                                   attachments=message_json['attachments'],
+                                                   )
+        print(json.dumps(post_response, indent=2))
+        return 'Okay {0}-chan - I sent them your message!'.format(sending_user)
 
     def _handle_join(self, text, name):
         """Determine the response for a join request
@@ -388,6 +424,9 @@ class Nekochan():
                 response = 'Hmf (＃￣ω￣)... I was told that that _I_ was best-girl'
             elif response_code == 'waifu-pos':
                 response = 'Y-you really think so {0}-chan?! (´• ω •`) ♡♡♡'.format(name)
+            elif response_code == 'whisper':
+                target_user = text.split('<@')[1].split('>')[0]
+                response = self._handle_whisper(data['text'], name, target_user)
             else:
                 response = 'I\'m not sure what you mean {0}-chan ┐(\'ω`;)┌'.format(name)
 
