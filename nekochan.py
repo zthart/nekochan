@@ -425,7 +425,7 @@ class Nekochan():
             elif response_code == 'waifu-pos':
                 response = 'Y-you really think so {0}-chan?! (´• ω •`) ♡♡♡'.format(name)
             elif response_code == 'whisper':
-                target_user = text.split('<@')[1].split('>')[0]
+                target_user = text.split('<@')[1].split('>')[0].upper()
                 response = self._handle_whisper(data['text'], name, target_user)
             else:
                 response = 'I\'m not sure what you mean {0}-chan ┐(\'ω`;)┌'.format(name)
