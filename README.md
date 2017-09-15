@@ -2,7 +2,7 @@
 
 **A horrifying slack-bot that you should probably never use (for a multitude of reasons!)**
 
-![version](https://img.shields.io/badge/version-v0.2-blue.svg)
+![version](https://img.shields.io/badge/version-v0.2.5-blue.svg)
 
 ### How to use it
 You'll need a bot user key for your slack workspace, and you'll need the bot's user ID
