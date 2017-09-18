@@ -288,6 +288,16 @@ class Nekochan():
                 return user_object['user']['real_name']
 
     def _handle_whisper(self, message, sending_user, target_user):
+        """ Create a whisper message json object, and send it to the specified user in their DMs with Neko-Chan
+
+        Args:
+            message (str): The actual text of the message
+            sending_user (str): The plain text username of the person who requested the whisper
+            target_user (str): The slack user ID of the user to send the message to
+
+        Returns:
+            str: The response to print out to the requesting user
+        """
         target_user_name = self._retrieve_name(target_user, is_id=True)
         channel_object = self.slack_client.api_call('im.open', user=target_user)
         channel_id = channel_object['channel']['id']
